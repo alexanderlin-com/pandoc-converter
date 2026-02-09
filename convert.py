@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import sys
-import yaml
 import subprocess
 import re
-import os
 from pathlib import Path
 
 # ============================================================
@@ -16,54 +14,94 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # COMMAND-LINE ARGUMENTS
 # ============================================================
 if len(sys.argv) < 2:
-    print("Usage: python convert.py <input_file> [format]")
+    print("Usage: python convert.py <input_file> [format] [output_dir]")
     print("Example: python convert.py myfile.md pdf")
     sys.exit(1)
 
 input_file = sys.argv[1]
 output_format = sys.argv[2] if len(sys.argv) > 2 else 'docx'
 
+# Allow custom output directory as third argument
+if len(sys.argv) > 3:
+    OUTPUT_DIR = Path(sys.argv[3])
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 # ============================================================
-# READ FILE & EXTRACT YAML
+# READ FILE & EXTRACT YAML (NO DEPENDENCIES)
 # ============================================================
+def parse_yaml_frontmatter(content):
+    """Extract YAML frontmatter without external libraries."""
+    if not content.startswith('---'):
+        return {}
+    
+    # Find the closing ---
+    parts = content.split('---', 2)
+    if len(parts) < 3:
+        return {}
+    
+    yaml_block = parts[1].strip()
+    metadata = {}
+    
+    # Parse line by line
+    for line in yaml_block.split('\n'):
+        line = line.strip()
+        if ':' in line:
+            key, value = line.split(':', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            
+            # Remove Obsidian wiki-links [[ ]]
+            value = re.sub(r'\[\[.*?\]\]', '', value).strip()
+            
+            # Remove templater syntax <% %>
+            value = re.sub(r'<%.*?%>', '', value).strip()
+            
+            if value:  # Only add non-empty values
+                metadata[key] = value
+    
+    return metadata
+
 with open(input_file, 'r', encoding='utf-8') as f:
     content = f.read()
 
-# Check if YAML frontmatter exists
-if not content.startswith('---'):
-    print("No YAML frontmatter found. Using default filename.")
-    filename = "output"
+metadata = parse_yaml_frontmatter(content)
+
+# ============================================================
+# FILENAME LOGIC
+# ============================================================
+file_type = metadata.get('type', '')
+
+if file_type == 'scene':
+    # Scene format: "story Chxxx — chapter_title"
+    story = metadata.get('story', 'Unknown_Story')
+    chapter = metadata.get('chapter', 'X')
+    chapter_title = metadata.get('chapter_title', 'Untitled')
+    
+    # Zero-pad chapter to 3 digits for proper sorting
+    if chapter != 'X':
+        try:
+            chapter = str(int(chapter)).zfill(3)
+        except (ValueError, TypeError):
+            chapter = 'XXX'  # Fallback if chapter isn't a number
+    
+    filename = f"{story} Ch{chapter} — {chapter_title}"
 else:
-    # Extract YAML block (between first and second ---)
-    yaml_block = content.split('---')[1]
-    metadata = yaml.safe_load(yaml_block)
+    # Default format: just use title
+    filename = metadata.get('title', 'output')
 
-    # ============================================================
-    # FILENAME LOGIC
-    # ============================================================
-    file_type = metadata.get('type', '')
+# ============================================================
+# SANITIZE FILENAME
+# ============================================================
+# Remove invalid filename characters (including colon for Windows)
+filename = re.sub(r'[<>:"/\\|?*]', '', filename)
+# Keep spaces (do NOT replace with underscores)
+# Strip leading/trailing whitespace
+filename = filename.strip()
 
-    if file_type == 'scene':
-        # Scene format: "[story] - Chapter [chapter] - [chapter_title]"
-        story = metadata.get('story', 'Unknown_Story')
-        chapter = metadata.get('chapter', 'X')
-        chapter_title = metadata.get('chapter_title', 'Untitled')
-
-        # Build filename
-        filename = f"{story} - Chapter {chapter} - {chapter_title}"
-    else:
-        # Default format: just use title
-        filename = metadata.get('title', 'output')
-
-    # ============================================================
-    # SANITIZE FILENAME
-    # ============================================================
-    # Remove invalid filename characters
-    filename = re.sub(r'[<>:"/\\|?*]', '', filename)
-    # Replace spaces with underscores
-    filename = filename.replace(' ', '_')
-    # Strip leading/trailing whitespace
-    filename = filename.strip()
+# Fallback if filename is empty
+if not filename or filename == '_':
+    filename = 'output'
 
 # Build full output path
 output_file = OUTPUT_DIR / f"{filename}.{output_format}"
