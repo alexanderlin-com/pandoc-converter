@@ -3,6 +3,14 @@ import sys
 import yaml
 import subprocess
 import re
+import os
+from pathlib import Path
+
+# ============================================================
+# OUTPUT DIRECTORY CONFIGURATION
+# ============================================================
+OUTPUT_DIR = Path.home() / "Dropbox" / "Pandoc"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================
 # COMMAND-LINE ARGUMENTS
@@ -24,7 +32,7 @@ with open(input_file, 'r', encoding='utf-8') as f:
 # Check if YAML frontmatter exists
 if not content.startswith('---'):
     print("No YAML frontmatter found. Using default filename.")
-    output_file = f"output.{output_format}"
+    filename = "output"
 else:
     # Extract YAML block (between first and second ---)
     yaml_block = content.split('---')[1]
@@ -50,20 +58,21 @@ else:
     # ============================================================
     # SANITIZE FILENAME
     # ============================================================
-    # Remove invalid filename characters (Windows is pickier than Unix)
+    # Remove invalid filename characters
     filename = re.sub(r'[<>:"/\\|?*]', '', filename)
-    # Replace spaces with underscores (optional, comment out if you want spaces)
+    # Replace spaces with underscores
     filename = filename.replace(' ', '_')
     # Strip leading/trailing whitespace
     filename = filename.strip()
 
-    output_file = f"{filename}.{output_format}"
+# Build full output path
+output_file = OUTPUT_DIR / f"{filename}.{output_format}"
 
 # ============================================================
 # RUN PANDOC
 # ============================================================
 try:
-    subprocess.run(['pandoc', input_file, '-o', output_file], check=True)
+    subprocess.run(['pandoc', input_file, '-o', str(output_file)], check=True)
     print(f"✓ Converted to: {output_file}")
 except subprocess.CalledProcessError as e:
     print(f"✗ Pandoc conversion failed: {e}")
