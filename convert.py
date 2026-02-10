@@ -87,9 +87,14 @@ if file_type == 'scene':
     
     filename = f"{story} Ch{chapter} — {chapter_title}"
 else:
-    # Default format: just use title
-    filename = metadata.get('title', 'output')
-
+    # Default format: use title if available
+    title = metadata.get('title', '').strip()
+    
+    if title:
+        filename = title
+    else:
+        # Fallback: use the input file's name (without extension)
+        filename = Path(input_file).stem
 # ============================================================
 # SANITIZE FILENAME
 # ============================================================
